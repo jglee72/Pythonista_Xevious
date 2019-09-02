@@ -1,3 +1,5 @@
+#!python3.7
+
 from scene import *
 import sound
 import random
@@ -5,6 +7,7 @@ import math
 A = Action
 import ui
 import time
+import console
 from PIL import Image as PILImage
 
 
@@ -44,18 +47,14 @@ class FlyingSaucer (SpriteNode):
 		img = Texture(ui.Image.named('images/IMG_0312.PNG')).subtexture((0,0,0.125,1))
 		SpriteNode.__init__(self, img, **kwargs)
 		self.destroyed = False
-	# saucer should be an increasing speed arc from either side.
 	def move_saucer(self,sender,idx):
 		seq=[]
 		for x in range(0, random.randint(180,250), 6):
 			new_action= Action.move_to(math.sin(x/57)*300, 800-3*x)
 			seq.append(new_action)
-		# note remove() not bound to [idx] therefore interferes with others 
-#		seq.append(Action.remove())
-		sender.saucer[idx].run_action(Action.sequence(seq))
-
-
-
+		seq.append(Action.remove())
+		sender.items[idx].run_action(Action.sequence(seq))
+		
 class MyScene (Scene):
 	def setup(self):
 		self.scrolling=False
@@ -67,22 +66,20 @@ class MyScene (Scene):
 		self.lasers=[]
 		self.bombs=[]		
 		self.game_over = True
-		self.count=0
-		self.saucer=[0,0,0,0,0]
+
 		self.started=False
 		self.explosion_index=0
 		self.solavou_lives=3
 		self.lives=[]
 		self.items=[]
-		# saucer set of 5; should it just be in items?
-		for i in range(0,5):
-			self.saucer[i] = FlyingSaucer(position=(-10, self.size.h -12),parent=self, scale = 1.5,speed= 8-i)
-#			self.add_child(self.saucer[i])
-
-		for i in range(0,3):
-			self.lives.append(Solavou_Lives(position=(30+30*i, 30),parent=self, scale = 0.8))
-		#self.add_child(self.lives[i])
+		self.spawned = False
 		
+		self.score = 0
+		
+		# Add Lives bottom left screen
+		for i in range(0,3):
+			self.lives.append (Solavou_Lives(position=(30+30*i, 30),parent=self, scale = 0.8))
+
 		#add title
 		self.xevious = SpriteNode(Texture(ui.Image.named('images/IMG_0279.PNG')),position=(self.size.w/2,self.size.h/2),x_scale=0.3,y_scale= 0.3)
 		self.add_child(self.xevious)
@@ -91,27 +88,36 @@ class MyScene (Scene):
 		self.solavou= Solavou(position=(self.size.w/2,self.size.h/2-50),scale=1,anchor_point=(0.5,0.02),speed=3.2,blend_mode=BLEND_NORMAL)
 		self.add_child(self.solavou)
 
-		
-
+		# Add "Insert Coins"
 		self.insertcoins = LabelNode('INSERT COINS', position=(self.size.w/2, self.size.h/2-80), font = ('Copperplate',24))
 		self.add_child(self.insertcoins)
 		
+		# Add "Namco"
 		self.namco = LabelNode('\u00a9'+'   1982 NAMCO LTD.', position=(self.size.w/2, self.size.h/2-120), font = ('Copperplate',24))
 		self.add_child(self.namco)
 		
+		# Add "P right"		
 		self.pright = LabelNode('\u2117', position=(self.size.w/2-102, self.size.h/2-122), font = ('Copperplate',18))
 		self.add_child(self.pright)
 		
+		# Add "Player Up"		
 		self.playerup = LabelNode('1 UP', position=(40, self.size.h-30), font = ('Copperplate', 20))
 		self.add_child(self.playerup)
 		
+		#add score label
+		self.score_label = LabelNode('0', position=(40, self.size.h-50),font = ('Copperplate', 20))		
+		self.add_child(self.score_label)		
+		
+		# Add "Highscore"		
 		self.highscore = LabelNode('HIGH SCORE', position=(self.size.w/2, self.size.h-40), font = ('Copperplate', 20))
 		self.add_child(self.highscore)		
 		
+		# Add bomb: change similar to laser?
 		self.bomby=SpriteNode(Texture(ui. Image.named('shp:sparkle')), position=(self.size.w/2,self.size.h/2-50),scale=0.5)
-		self.bomb_target=SpriteNode(Texture(ui.Image.named('images/IMG_0285.PNG')), position=(self.size.w/2,self.size.h/2-50),scale=1)
 		
-		self.laser=[SpriteNode(Texture(ui. Image.named('images/IMG_0286.PNG'))), SpriteNode(Texture(ui. Image.named('images/IMG_0286.PNG'))),		SpriteNode(Texture(ui. Image.named('images/IMG_0286.PNG')))]					
+		# Add bomb end position Cross
+		self.bomb_target= SpriteNode(Texture(ui.Image.named('images/IMG_0285.PNG')), position=(self.size.w/2,self.size.h/2-50),scale=1)
+		
 	def did_change_size(self):
 		pass
 		
@@ -124,11 +130,13 @@ class MyScene (Scene):
 #		self.update_player()
 		self.check_item_collisions()
 		self.check_laser_collisions()	
-		self.check_bomb_collisions()			
+		self.check_bomb_collisions()		
+		if len(self.items) == 0:
+			self.spawned = False	
 		if random.random() < 0.008 * self.speed:
 			self.spawn_item()
+		self.score_label.text = str(self.score)
 	
-				
 	def touch_began(self, touch):
 		self.game_over = False
 		# A fix for playing music after theme: insert after fade sequence (6s)
@@ -158,30 +166,28 @@ class MyScene (Scene):
 		self.solavou.run_action(Action.move_by(delta_position[0],delta_position[1],0.0))
 	
 	def touch_ended(self, touch):
-		
-
 		pass
-		# test fire enemy.boss attack
+		# test enemy.boss attack
 #		self.boss.launch_attack()
 
 	def spawn_item(self):
+		if self.spawned == True:
+			return 
+			
+		# empty items
+		self.items=[]
+
 		if random.random() < 0.6 * self.speed:
+			self.spawned = True
 			for i in range(0,5):
-				self.items.append(self.saucer[i])
-				self.add_child(self.items[i])
+				saucer_temp= FlyingSaucer(position=(-10, self.size.h -12),parent=self, scale = 1.5,speed= 8-i)
+				self.items.append(saucer_temp)
+				self.items[i].destroyed = False
 				self.items[i].move_saucer(self,i)
-#				self.add_child(self.saucer[i])
-#				self.saucer[i].move_saucer(self,i)
-#			pass
-			'''
-			meteor = Meteor(parent=self)
-			meteor.position = (random.uniform(20, self.size.w-20), self.size.h + 30)
-			d = random.uniform(2.0, 4.0)
-			actions = [A.move_to(random.uniform(0, self.size.w), -100, d), A.remove()]
-			meteor.run_action(A.sequence(actions))
-			self.items.append(meteor)
-			'''
+				
+#				self.spawned = False			
 		else:
+#			self.spawned = False			
 			pass
 			
 	def check_bomb_collisions(self):
@@ -193,29 +199,35 @@ class MyScene (Scene):
 	def check_laser_collisions(self):
 		''' Method to monitor Solavou lasers to destroy saucers, etc, remove objects and lasers, make sounds.
 		'''
-		# define a frame for player: move to check enemy lasers method
-		player_hitbox = Rect(self.solavou.position.x - 20, 32, 40, 65)
-		
 		for laser in list(self.lasers):
 			# Remove lasers gone off screen
 			if not laser.parent:
 				self.lasers.remove(laser)
 				continue
-			'''
 			for item in self.items:
-				if not isinstance(item, FlyingSaucer):
+				# if item is not saucer...
+				if not isinstance(item, FlyingSaucer):					
+					print(',',end='')
 					continue
+				#...or its any destroyed object...
 				if item.destroyed:
 					continue
-				if laser.position in item.frame:		
-					self.destroy_saucer(item)
+				#... or item is of the screen
+				if not item.parent:
+					self.items.remove(item)
+					continue				
+				if item.frame.contains_point(laser.position):
 					self.lasers.remove(laser)
 					laser.remove_from_parent()
-					item.remove_from_parent()
+					self.destroy_saucer(item)			
+					self.items.remove(item)		
+					self.score+=30
 					break
-			'''
 	def destroy_saucer(sender,item):
-		pass
+		sound.play_effect('arcade:Coin_2')
+		item.destroyed=True
+		item.remove_from_parent()
+	
 	def check_item_collisions(self):
 		if self.solavou.destroyed == True:
 			return
@@ -223,8 +235,8 @@ class MyScene (Scene):
 		player_hitbox = Rect(self.solavou.position.x - 15, self.solavou.position.y-15, 25, 25)
 
 		# Check for overlap (collision)
-		for item in range(0,5):
-			if self.saucer[item].frame.intersects(player_hitbox):
+		for item in list(self.items):
+			if item.frame.intersects(player_hitbox):
 				self.solavou_hit(self)
 
 	def solavou_hit(self,sender):
@@ -235,7 +247,6 @@ class MyScene (Scene):
 		actions=[A.call(self.change_image),A.move_by(0,-5),A.call(self.change_image),A.move_by(0,-5),A.call(self.change_image),A.move_by(0,-5),A.call(self.change_image),A.move_by(0,-5),A.call(self.change_image),A.move_by(0,-5),A.call(self.change_image),A.move_by(0,-5),A.call(self.change_image),A.fade_to(0,2),A.wait(2),A.call(self.return_image)]
 		self.solavou.run_action(Action.sequence(actions))
 		#Actions run in near parallel time so this removes solavou before all explosion pics done.
-#		self.solavou.remove_from_parent()
 		self.lives[self.solavou_lives-1].remove_from_parent()
 		
 		if self.solavou_lives != 0:
@@ -268,17 +279,17 @@ class MyScene (Scene):
 		# limit 3 lasers at a Time
 		if len(self.lasers) >= 3:
 			return
-		idx = self.count%3
-		self.laser[idx].position = self.solavou.position+(0,15)
-		self.add_child(self.laser[idx])
+		laser_temp=SpriteNode(Texture(ui. Image.named('images/IMG_0286.PNG')), parent= self)
 
+		laser_temp.position= self.solavou.position+(0,15)
 		actions = [Action.move_by(0, self.size.h, 1.2 * self.speed), Action.remove()]
-		self.laser[idx].run_action(Action.sequence(actions))
 
-		self.lasers.append(self.laser[idx])
+		laser_temp.run_action(A.sequence(actions))
+
+		self.lasers.append(laser_temp)
 		sound.play_effect('digital:Laser4')
-		self.count+=1
-		
+
+
 	def shoot_bomb(self):		
 		# limit 1 bomb at a Time
 		if len(self.bombs) >= 1:
@@ -323,8 +334,8 @@ class MyScene (Scene):
 		'''
 		pass
 	def game_over_cleanup(self):
-		print('game over')
-		pass
+		end_label = LabelNode('Game Over',position=(self.size.w/2-50,self. size.h/2),font=('Marker Felt',29))
+		self.add_child(end_label)
 
 def play_theme():
 	# Play theme. move later+ constant
@@ -333,4 +344,5 @@ def play_norm():
 	sound.play_effect('music/normPlay.caf')
 
 if __name__ == '__main__':
+	console.clear()
 	run(MyScene(), PORTRAIT, show_fps=True)
